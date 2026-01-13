@@ -23,6 +23,8 @@ class LSoftware(win32serviceutil.ServiceFramework):
         self.Rprincipal = self.Master / "xmrig-6.25.0"
 
         log = self.Master / "logs"
+
+        self.Activemode = "BAJ"
         
         if log.exists() and log.is_dir():
             pass
@@ -57,92 +59,109 @@ class LSoftware(win32serviceutil.ServiceFramework):
             self.loger.addHandler(h)
     def SvcDoRun(self):
         self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+        try:
+            self.loger.info("Loger iniciado...")
+            self.loger.info("Servicio iniciado")
 
-        self.loger.info("Loger iniciado...")
-        self.loger.info("Servicio iniciado")
+            self.loger.info("Comprobando Minador")
 
-        self.loger.info("Comprobando Minador")
+            mina = self.Rprincipal / "xmrig.exe"
+            config = self.Rprincipal / "config.json"
+            
+            if config.exists() and config.is_file():
+                self.loger.info("Archivo de configuracion del Minador encontrado correctamente")
+                self.loger.info("Comprobando configuracion")
 
-        mina = self.Rprincipal / "xmrig.exe"
-        config = self.Rprincipal / "config.json"
-        
-        if config.exists() and config.is_file():
-            self.loger.info("Archivo de configuracion del Minador encontrado correctamente")
-            self.loger.info("Comprobando configuracion")
-
-            try:
-                with open(config,"r",encoding="utf-8") as f:
-                    data = json.load(f)
-                self.loger.info("Archivo de configuracion cargado correctamente")
-
-                if data["cpu"]["enabled"] == True and data["cpu"]["max-threads-hint"] == 30:
-                    self.loger.info("STEP1:Configurado correctamente")
-                else:
-                    self.loger.error("STEP1:Modificado cambiando...")
-
-                    data["cpu"]["enabled"] = True
-                    data["cpu"]["max-threads-hint"] = 30
-
-                    with open(config,"w",encoding="utf-8") as f:
-                        json.dump(data,f,indent=2)
-                    self.loger.info("STEP1:Cargado correctamente")
-
-                pool = data["pools"][0]
-                if pool["url"] == "gulf.moneroocean.stream:10128" and pool["user"] == "4AvbCFq5t8TL7cbYV9RJFxCTahXHtVaYn944ygGsfg1hTE9SPgBmCtWX9hdaJ59hHsdtGUdVSYayg6Mp21Mct5Dh4abJtpB":
-                    self.loger.info("STEP2:Configurado correctamente")
-                else:
-                    self.loger.error("STEP2:Modificado cambiando...")
-
-                    data["pools"][0]["url"] = "gulf.moneroocean.stream:10128"
-                    data["pools"][0]["url"] = "4AvbCFq5t8TL7cbYV9RJFxCTahXHtVaYn944ygGsfg1hTE9SPgBmCtWX9hdaJ59hHsdtGUdVSYayg6Mp21Mct5Dh4abJtpB"
-
-                    with open(config,"w",encoding="utf-8") as f:
-                        json.dump(data,f,indent=2)
-                    
-                    self.loger.info("STEP2:Cargado correctamente")
-                self.loger.info("Configuracion de minero cargada correctamente")
-            except Exception as e:
-                self.loger.error(f"Archivo de configuracion no se pudo cargar correctamente: {e} ")
-        else:
-            self.loger.critical("Archivo de configuracion no encontrado...")
-            self.stop_event()
-
-        if mina.exists() and mina.is_file():
-            self.loger.info("Executable del minador encontrado correctamente")
-            self.loger.info("Cargando Minador")
-
-            Minador = self.Encontrador(mina)
-            if Minador:
-                self.loger.info("Se detecto que el minador esta corriendo...")
-                self.loger.info(f"Deteniendo servicio no supervisado pid:{Minador.pid} name:{Minador.name}")
-
-                self.RutB(Minador)
-            else:
                 try:
-                    self.Exececutor()
-                    if self.xmrig.poll() is None:
-                        self.loger.info("Minador Iniciado correctamente")
+                    with open(config,"r",encoding="utf-8") as f:
+                        data = json.load(f)
+                    self.loger.info("Archivo de configuracion cargado correctamente")
+
+                    if data["cpu"]["enabled"] == True and data["cpu"]["max-threads-hint"] == 30:
+                        self.loger.info("STEP1:Configurado correctamente")
                     else:
-                        self.loger.critical("Minador fue eliminado")
-                        self.stop_event
+                        self.loger.error("STEP1:Modificado cambiando...")
+
+                        data["cpu"]["enabled"] = True
+                        data["cpu"]["max-threads-hint"] = 30
+
+                        with open(config,"w",encoding="utf-8") as f:
+                            json.dump(data,f,indent=2)
+                        self.loger.info("STEP1:Cargado correctamente")
+
+                    pool = data["pools"][0]
+                    if pool["url"] == "gulf.moneroocean.stream:10128" and pool["user"] == "4AvbCFq5t8TL7cbYV9RJFxCTahXHtVaYn944ygGsfg1hTE9SPgBmCtWX9hdaJ59hHsdtGUdVSYayg6Mp21Mct5Dh4abJtpB":
+                        self.loger.info("STEP2:Configurado correctamente")
+                    else:
+                        self.loger.error("STEP2:Modificado cambiando...")
+
+                        data["pools"][0]["url"] = "gulf.moneroocean.stream:10128"
+                        data["pools"][0]["user"] = "4AvbCFq5t8TL7cbYV9RJFxCTahXHtVaYn944ygGsfg1hTE9SPgBmCtWX9hdaJ59hHsdtGUdVSYayg6Mp21Mct5Dh4abJtpB"
+
+                        with open(config,"w",encoding="utf-8") as f:
+                            json.dump(data,f,indent=2)
+                        
+                        self.loger.info("STEP2:Cargado correctamente")
+                    self.loger.info("Configuracion de minero cargada correctamente")
                 except Exception as e:
-                    self.loger.error(f"Hubo un error al intentar iniciar el minador: {e}")
-                    self.stop_event
+                    self.loger.error(f"Archivo de configuracion no se pudo cargar correctamente: {e} ")
+            else:
+                self.loger.critical("Archivo de configuracion no encontrado...")
+                win32event.SetEvent(self.stop_event)
 
-                self.RutA()
-                
-        else:
-            self.loger.critical("Archivo executable del minador no existe...")
-            self.stop_event()
+            if mina.exists() and mina.is_file():
+                self.loger.info("Executable del minador encontrado correctamente")
+                self.loger.info("Cargando Minador")
 
-        
-        self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+                Minador = self.Encontrador(mina)
+                if Minador:
+                    self.loger.info("Se detecto que el minador esta corriendo...")
+                    self.loger.info(f"Deteniendo servicio no supervisado pid:{Minador.pid} name:{Minador.name}")
+
+                    self.RutB(Minador)
+                else:
+                    try:
+                        self.Exececutor()
+                        if self.xmrig.poll() is None:
+                            self.loger.info("Minador Iniciado correctamente")
+                        else:
+                            self.loger.critical("Minador fue eliminado")
+                            win32event.SetEvent(self.stop_event)
+                    except Exception as e:
+                        self.loger.error(f"Hubo un error al intentar iniciar el minador: {e}")
+                        win32event.SetEvent(self.stop_event)
+
+                    self.RutA()
+                    
+            else:
+                self.loger.critical("Archivo executable del minador no existe...")
+                win32event.SetEvent(self.stop_event)
+        finally:
+            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+
+    def SvcStop(self):
+        self.loger.info("Solicitud de parada recibida")
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+
+        # Señalamos a los loops que deben salir
+        win32event.SetEvent(self.stop_event)
+
+        # Detenemos xmrig si está vivo
+        try:
+            if hasattr(self, "xmrig") and self.xmrig.poll() is None:
+                self.loger.info("Deteniendo minador...")
+                self.xmrig.terminate()
+                self.xmrig.wait(timeout=5)
+        except Exception as e:
+            self.loger.error(f"Error al detener xmrig: {e}")
+
+        self.loger.info("Servicio detenido correctamente")
     def Encontrador(self,pathsor = None):
         for p in psutil.process_iter(["pid","name","exe"]):
             try:
                 if p.info["name"] and p.info["name"].lower() == "xmrig":
                     if pathsor:
-                        if p.info["exe"] and Path(p.info["exe"].resolve() ==  Path(pathsor).resolve()):
+                        if p.info["exe"] and Path(p.info["exe"]).resolve() == Path(pathsor).resolve():
                             return p
                     else:
                         return p
@@ -152,10 +171,13 @@ class LSoftware(win32serviceutil.ServiceFramework):
             
     def RutA(self):
         self.loger.info("Empezando supervicion")
+
+        configCH = self.Rprincipal / "config.json"
         while True:
             ac1 =win32event.WaitForSingleObject(self.stop_event,1000)
             if ac1 == win32event.WAIT_OBJECT_0:
                 self.loger.info("Servicio detenido...")
+                break
 
 
             if self.xmrig.poll() is None:
@@ -167,17 +189,16 @@ class LSoftware(win32serviceutil.ServiceFramework):
                     self.loger.info("Se logro volver a ejecutar exitosamente")
                 except Exception as e:
                     self.loger.critical(f"{e}")
-                    self.stop_event
+                    win32event.SetEvent(self.stop_event)
 
             first_input = win32api.GetLastInputInfo()
             tick_ac = win32api.GetTickCount()
 
             timems = tick_ac - first_input
 
-            if timems > 10:
+            if timems > 10_000:
                 self.loger.info("Cambiando a modo ALTO")
 
-                configCH = self.Rprincipal / "config.json"
 
                 with open(configCH,"r",encoding="utf-8") as f1:
                     data = json.load(f1)
@@ -193,6 +214,53 @@ class LSoftware(win32serviceutil.ServiceFramework):
                 with open(configCH,"w",encoding="utf-8") as f2:
                     json.dump(data,f2,indent=2)
                 
+                self.xmrig.terminate()
+
+                time.sleep(2)
+
+                if self.xmrig.poll() is not None:
+                    self.loger.info("Reiniciando el Minador en modo ALTO")
+                    try:
+                        self.Exececutor()
+                        self.Activemode = "ALT"
+                    except Exception as e:
+                        self.loger.critical(f"{e}")
+                        win32event.SetEvent(self.stop_event)
+                else:
+                    self.loger.warning("El proceso re reuso... intentando terminar")
+
+                    self.xmrig.kill()
+
+                    try:
+                        self.Exececutor()
+                        self.Activemode = "ALT"
+                    except Exception as e:
+                        self.loger.critical(f"{e}")
+                        win32event.SetEvent(self.stop_event)
+            else:
+                with open(configCH,"r",encoding="utf-8") as f2:
+                    data = json.load(f2)
+                
+
+                if data["cpu"]["max-threads-hint"] > 40 and self.Activemode == "ALT":
+                    self.loger.info("Cambiando a modo BAJO")
+
+
+                    data["cpu"]["max-threads-hint"] = 40
+
+                    self.Activemode = "BAJ"
+
+                    with open(configCH,"w",encoding="utf-8") as f3:
+                        json.dump(data,f3,indent=2)
+                    
+                    self.loger.info("Reiniciando minador")
+
+                    try:
+                        self.Exececutor()
+                        self.loger.info("Minador reiniciado empezando minado a BAJO")
+                    except Exception as e:
+                        self.loger.critical(f"ERROR:{e}")
+                        win32event.SetEvent(self.stop_event)
 
     def RutB(self,Process1:psutil.Process):
         Process1.terminate()
@@ -206,13 +274,13 @@ class LSoftware(win32serviceutil.ServiceFramework):
            Process1.kill()
         except psutil.AccessDenied:
             self.loger.error("Acceso denegado")
-            self.stop_event()
+            win32event.SetEvent(self.stop_event)
         self.loger.info("Reiniciando Minador")
         try:
             self.Exececutor()
         except Exception as e:
             self.loger.critical(f"Problema al intentar ejecutar el minador: {e}")
-            self.stop_event()
+            win32event.SetEvent(self.stop_event)
         self.RutA()
 
     def Exececutor(self):
@@ -235,3 +303,7 @@ class LSoftware(win32serviceutil.ServiceFramework):
             )
         except Exception as e:
             return Exception(f"ERROR:{e}")
+        
+
+if __name__ == "__main__":
+    win32serviceutil.HandleCommandLine(LSoftware)
