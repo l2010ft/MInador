@@ -1,10 +1,12 @@
 import win32service
 import win32serviceutil
 import win32event
+import win32timezone
 import sys,json,win32evtlog,win32evtlogutil,servicemanager,subprocess,win32process,psutil,win32api
 from logging.handlers import RotatingFileHandler
 import logging
 import time
+import threading
 from pathlib import Path
 
 class LSoftware(win32serviceutil.ServiceFramework):
@@ -58,7 +60,24 @@ class LSoftware(win32serviceutil.ServiceFramework):
             h.setFormatter(formato)
             self.loger.addHandler(h)
     def SvcDoRun(self):
+        self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
+
+        self.worker = threading.Thread(
+            target=self.main,
+            daemon=True
+        )
+        self.worker.start()
+
+
         self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+
+        win32event.WaitForSingleObject(
+            self.stop_event,
+            win32event.INFINITE
+        )
+
+        self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+    def main(self):
         try:
             self.loger.info("Loger iniciado...")
             self.loger.info("Servicio iniciado")
@@ -136,9 +155,9 @@ class LSoftware(win32serviceutil.ServiceFramework):
             else:
                 self.loger.critical("Archivo executable del minador no existe...")
                 win32event.SetEvent(self.stop_event)
-        finally:
-            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
-
+        except Exception as e:
+            self.loger.critical(f"ERROR:{e}")
+            win32event.SetEvent(self.stop_event)
     def SvcStop(self):
         self.loger.info("Solicitud de parada recibida")
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
@@ -156,8 +175,8 @@ class LSoftware(win32serviceutil.ServiceFramework):
             self.loger.error(f"Error al detener xmrig: {e}")
 
         self.loger.info("Servicio detenido correctamente")
-    def Encontrador(self,pathsor = None):
-        for p in psutil.process_iter(["pid","name","exe"]):
+    def Encontrador(self, pathsor=None):
+        for p in psutil.process_iter(["pid", "name", "exe"]):
             try:
                 if p.info["name"] and p.info["name"].lower() == "xmrig":
                     if pathsor:
@@ -165,9 +184,15 @@ class LSoftware(win32serviceutil.ServiceFramework):
                             return p
                     else:
                         return p
-            except (psutil.NoSuchProcess,psutil.AccessDenied) as e:
-                self.loger.error(f"No se pudo utilizar el Encontrador: {e}")
-                return None
+            except psutil.AccessDenied:
+                self.loger.warning(f"Acceso denegado a un proceso pid:{p.pid}, continuando búsqueda...")
+                continue
+            except psutil.NoSuchProcess:
+                continue
+            except Exception as e:
+                self.loger.error(f"Error inesperado en Encontrador: {e}")
+                continue
+        return None
             
     def RutA(self):
         self.loger.info("Empezando supervicion")
