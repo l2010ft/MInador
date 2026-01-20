@@ -16,67 +16,38 @@ class LSoftware(win32serviceutil.ServiceFramework):
 
 
     def __init__(self, args):
-        super().__init__(args)
+        win32serviceutil.ServiceFramework.__init__(self,args)
 
-        self.stop_event = win32event.CreateEvent(None,0,0,None)
-
-        self.Master = Path(sys.executable).parent
-
-        self.Rprincipal = self.Master / "xmrig-6.25.0"
-
-        log = self.Master / "logs"
-
-        self.Activemode = "BAJ"
-        
-        if log.exists() and log.is_dir():
-            pass
-        else:
-            log.mkdir(exist_ok=True)
-
-        loggerI = log / "minerlog.log"
-        loggerC = log / "CRITICALMinerlog"
-
-        self.loger = logging.getLogger("LMiner")
-        self.loger.setLevel(logging.DEBUG)
-        self.loger.propagate = False
-        self.logI = RotatingFileHandler(
-            filename=loggerI,
-            maxBytes=2_000_000,
-            backupCount=3
-        )
-        self.logI.setLevel(logging.INFO)
-        self.logC = RotatingFileHandler(
-            filename=loggerC,
-            maxBytes=2_000_000,
-            backupCount=2
-        )
-        self.logC.setLevel(logging.CRITICAL)
-
-
-        formato = logging.Formatter(
-            "%(asctime)s | %(levelname)s | %(message)s"
-        )
-        for h in (self.logI,self.logC):
-            h.setFormatter(formato)
-            self.loger.addHandler(h)
+        self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+        self.worker = None
+        self.Activemode = None
+        self.loger = None
+    
     def SvcDoRun(self):
         self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
 
+        try:
+            self.ReportServiceStatus(win32service.SERVICE_START_PENDING, 0 ,10000, 1)
+            self._bootstrap()
+        except Exception as e:
+            servicemanager.LogErrorMsg(f"Bootstrap failed: {e}")
+            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+            return
         self.worker = threading.Thread(
-            target=self.main,
-            daemon=True
+            target=self.main
         )
         self.worker.start()
 
 
         self.ReportServiceStatus(win32service.SERVICE_RUNNING)
 
-        win32event.WaitForSingleObject(
-            self.stop_event,
-            win32event.INFINITE
-        )
+        while True:
+            rc = win32event.WaitForSingleObject(self.stop_event, 1000)
+            if rc == win32event.WAIT_OBJECT_0:
+                break
 
         self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+    
     def main(self):
         try:
             self.loger.info("Loger iniciado...")
@@ -158,27 +129,79 @@ class LSoftware(win32serviceutil.ServiceFramework):
         except Exception as e:
             self.loger.critical(f"ERROR:{e}")
             win32event.SetEvent(self.stop_event)
+
     def SvcStop(self):
         self.loger.info("Solicitud de parada recibida")
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
 
-        # Señalamos a los loops que deben salir
+        # 1️⃣ avisar
         win32event.SetEvent(self.stop_event)
 
-        # Detenemos xmrig si está vivo
+        # 2️⃣ esperar al hilo
+        if self.worker and self.worker.is_alive():
+            self.worker.join(timeout=10)
+
+        # 3️⃣ matar xmrig si sigue vivo
         try:
             if hasattr(self, "xmrig") and self.xmrig.poll() is None:
-                self.loger.info("Deteniendo minador...")
                 self.xmrig.terminate()
                 self.xmrig.wait(timeout=5)
         except Exception as e:
             self.loger.error(f"Error al detener xmrig: {e}")
 
         self.loger.info("Servicio detenido correctamente")
+        self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+
+    def _bootstrap(self):
+        if getattr(sys, 'frozen', False):
+            self.Master = Path(sys.executable).parent
+        else:
+            self.Master = Path(__file__).resolve().parent
+
+        self.Rprincipal = self.Master / "xmrig-6.25.0"
+
+        log = self.Master / "logs"
+
+        self.Activemode = "BAJ"
+        
+        if log.exists() and log.is_dir():
+            pass
+        else:
+            log.mkdir(exist_ok=True)
+
+        loggerI = log / "minerlog.log"
+        loggerC = log / "CRITICALMinerlog.log"
+
+        self.loger = logging.getLogger("LMiner")
+        self.loger.setLevel(logging.INFO)
+        self.loger.propagate = False
+        self.logI = RotatingFileHandler(
+            filename=loggerI,
+            maxBytes=2_000_000,
+            backupCount=3
+        )
+        self.logI.setLevel(logging.INFO)
+        self.logC = RotatingFileHandler(
+            filename=loggerC,
+            maxBytes=2_000_000,
+            backupCount=2
+        )
+        self.logC.setLevel(logging.CRITICAL)
+
+
+        formato = logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(message)s"
+        )
+        if self.loger.hasHandlers():
+            self.loger.handlers.clear()
+        for h in (self.logI,self.logC):
+            h.setFormatter(formato)
+            self.loger.addHandler(h)
+
     def Encontrador(self, pathsor=None):
         for p in psutil.process_iter(["pid", "name", "exe"]):
             try:
-                if p.info["name"] and p.info["name"].lower() == "xmrig":
+                if p.info["name"] and p.info["name"].lower() == "xmrig.exe":
                     if pathsor:
                         if p.info["exe"] and Path(p.info["exe"]).resolve() == Path(pathsor).resolve():
                             return p
@@ -309,25 +332,23 @@ class LSoftware(win32serviceutil.ServiceFramework):
         self.RutA()
 
     def Exececutor(self):
-        try:
-            flags = (
-                win32process.CREATE_NEW_PROCESS_GROUP |
-                win32process.DETACHED_PROCESS |
-                subprocess.CREATE_NO_WINDOW
-            )
-            mina1 = self.Rprincipal / "xmrig.exe"
-            config1 = self.Rprincipal / "config.json"
+        
+        flags = (
+            win32process.CREATE_NEW_PROCESS_GROUP |
+            win32process.DETACHED_PROCESS |
+            subprocess.CREATE_NO_WINDOW
+        )
+        mina1 = self.Rprincipal / "xmrig.exe"
+        config1 = self.Rprincipal / "config.json"
 
-            self.xmrig = subprocess.Popen(
-                [mina1,"--config",config1],
-                cwd=self.Rprincipal,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=flags,
-                close_fds=True
-            )
-        except Exception as e:
-            return Exception(f"ERROR:{e}")
+        self.xmrig = subprocess.Popen(
+            [mina1,"--config",config1],
+            cwd=self.Rprincipal,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True
+        )
         
 
 if __name__ == "__main__":
