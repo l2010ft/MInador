@@ -11,11 +11,6 @@ using json = nlohmann::json;
 class scripter
 {
 private:
-
-    struct Pconfig
-    {
-        
-    };
     struct ApiConfig {
         std::optional<std::string> id;
         std::optional<std::string> worker_id;
@@ -111,6 +106,14 @@ private:
         int ttl;
     };
 
+    struct PConfig
+    {
+        ApiConfig api;
+        HttpConfig http;
+
+        
+    };
+    
 public:
     struct terminal1
     {

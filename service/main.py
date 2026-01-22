@@ -27,7 +27,7 @@ class LSoftware(win32serviceutil.ServiceFramework):
         self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
 
         try:
-            self.ReportServiceStatus(win32service.SERVICE_START_PENDING, 0 ,10000, 1)
+            self.ReportServiceStatus(win32service.SERVICE_RUNNING)
             self._bootstrap()
         except Exception as e:
             servicemanager.LogErrorMsg(f"Bootstrap failed: {e}")
@@ -37,9 +37,6 @@ class LSoftware(win32serviceutil.ServiceFramework):
             target=self.main
         )
         self.worker.start()
-
-
-        self.ReportServiceStatus(win32service.SERVICE_RUNNING)
 
         while True:
             rc = win32event.WaitForSingleObject(self.stop_event, 1000)
@@ -251,7 +248,7 @@ class LSoftware(win32serviceutil.ServiceFramework):
                 with open(configCH,"r",encoding="utf-8") as f1:
                     data = json.load(f1)
 
-                cpu_use = psutil.cpu_percent(interval=1)
+                cpu_use = psutil.cpu_percent(interval=None)
 
                 maxcpu = 100 - cpu_use
                 if maxcpu > 50:
